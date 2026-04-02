@@ -61,7 +61,116 @@ timeline[]
 
 ---
 
-# 三、系统架构（Architecture）
+# 三、技术栈规范（Tech Stack Constraints ⚠️ 必须遵守）
+
+为保证项目一致性与可执行性，必须严格使用以下技术栈，不允许擅自替换或升级为其他方案（例如 TypeScript）。
+
+---
+
+## 1️⃣ 基础框架
+
+* 使用 **Vite** 初始化项目
+* 使用 **React（函数式组件）**
+* **必须使用 JavaScript（ESM）**，禁止使用 TypeScript
+
+---
+
+## 2️⃣ 状态管理
+
+* 使用 **Zustand**
+* 所有执行状态（timeline / currentStep / status）必须存储在 Zustand 中
+* UI 不允许维护独立执行状态
+
+---
+
+## 3️⃣ 执行引擎
+
+* 使用 `js-interpreter`
+* 不允许：
+
+  * 使用 eval
+  * 手写 AST 解释器
+  * 使用其他执行引擎替代
+
+---
+
+## 4️⃣ 编辑器
+
+* 使用 `@monaco-editor/react`
+* 不允许替换为其他编辑器（如 CodeMirror）
+
+---
+
+## 5️⃣ UI 与样式
+
+* 使用 **TailwindCSS**
+* 必须实现：
+
+  * 大圆角（>=16px）
+  * backdrop-filter 毛玻璃效果
+  * transition 动画
+
+---
+
+## 6️⃣ 布局系统
+
+* 使用以下之一实现拖拽分栏：
+
+  * `react-split-pane`
+  * 或 `allotment`
+
+---
+
+## 7️⃣ 可视化（预留）
+
+* 动画：Framer Motion（后续阶段）
+* 图结构：React Flow（后续阶段）
+
+---
+
+## 8️⃣ 项目结构约束（必须遵守）
+
+必须按以下目录结构组织代码：
+
+```text
+src/
+  core/
+    InterpreterController.js
+    Adapter.js
+  store/
+    timelineStore.js
+  components/
+    (UI组件)
+  App.jsx
+```
+
+---
+
+## 9️⃣ 代码规范约束
+
+* 使用 ES Module（import/export）
+* 禁止使用 class（除非必要）
+* 优先函数式写法
+* 所有模块必须职责单一（单一职责原则）
+
+---
+
+## 🔟 强约束（非常重要）
+
+* ❌ 禁止使用 TypeScript
+* ❌ 禁止 UI 直接访问 interpreter
+* ❌ 禁止跳过 Adapter 层
+* ❌ 禁止在 UI 中写执行逻辑
+
+---
+
+# 结论
+
+> 本项目是一个 **纯 JavaScript + React 的执行可视化系统**，核心在于执行链路，而不是 UI 技术炫技。
+
+---
+
+# 四、系统架构（Architecture）
 我们采用**单向数据流**与**三层架构**，UI 绝对禁止直接操作底层执行状态！
 
 ```text
@@ -80,7 +189,7 @@ React UI (只负责根据 timeline 渲染视图)
 
 ---
 
-# 四、核心模块拆分（必须按此拆）
+# 五、核心模块拆分（必须按此拆）
 
 ---
 
@@ -250,7 +359,7 @@ finished → idle（reset）
 
 ---
 
-# 五、UI/UX 规范（强化版）
+# 六、UI/UX 规范（强化版）
 
 ## 1️⃣ 整体视觉风格
 * **设计语言**：拟物玻璃化（Glassmorphism），所有面板必须使用大圆角（Border Radius >= 16px）并利用 CSS `backdrop-filter` 实现毛玻璃半透明效果。
@@ -330,7 +439,7 @@ Main Split (左右拖拽容器)
 
 ---
 
-# 六、执行流程（完整数据流）
+# 七、执行流程（完整数据流）
 
 ---
 
@@ -356,7 +465,7 @@ loop step() until:
 
 ---
 
-# 七、MVP 范围（严格限制）
+# 八、MVP 范围（严格限制）
 
 ---
 
@@ -395,7 +504,7 @@ let x = add(1, 2);
 
 ---
 
-# 八、关键工程约束（非常重要）
+# 九、关键工程约束（非常重要）
 
 ---
 
