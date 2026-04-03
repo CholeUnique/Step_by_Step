@@ -1,26 +1,22 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useEffect, useCallback } from 'react'
 import ReactFlow, {
   Background,
-  Controls,
   ReactFlowProvider,
+  useReactFlow,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { buildVisualizerState } from './VisualizerAdapter.js'
 import useGraphStore from '../store/graphStore.js'
 
-// ─── Custom node types (stable references — defined outside component) ────
+// ─── Custom node types (defined at module level — stable references) ──────
 
 function GlassNode({ data }) {
   const active = data.isActive
   return (
     <div
       style={{
-        background: active
-          ? 'rgba(74,222,128,0.15)'
-          : 'rgba(255,255,255,0.08)',
-        border: active
-          ? '2px solid rgba(74,222,128,0.8)'
-          : '1.5px solid rgba(255,255,255,0.18)',
+        background: active ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.08)',
+        border: active ? '2px solid rgba(74,222,128,0.8)' : '1.5px solid rgba(255,255,255,0.18)',
         backdropFilter: 'blur(8px)',
         borderRadius: 12,
         padding: '6px 16px',
@@ -70,6 +66,7 @@ function NullNode() {
   )
 }
 
+// Must be stable — defined outside any component
 const NODE_TYPES = { glassNode: GlassNode, nullNode: NullNode }
 
 // ─── Main component ───────────────────────────────────────────────────────
@@ -83,21 +80,21 @@ export default function VisualizerView({ variables, prevVariables, theme }) {
     [variables, prevVariables]
   )
 
+  // Subscribe to graphStore to decide whether to show the canvas
+  const graphNodes = useGraphStore(s => s.nodes)
+
   if (!structures || structures.length === 0) {
     return <p className={`text-xs ${theme.subText} select-none`}>No variables</p>
   }
 
-  // Separate graph-renderable from block-renderable
   const graphTypes = new Set(['tree', 'linkedlist'])
   const blockItems = structures.filter(s => !graphTypes.has(s.type))
-  const hasGraph   = structures.some(s => graphTypes.has(s.type))
+  // Show canvas when store has nodes (authoritative) OR structures declare graph types
+  const hasGraph = graphNodes.length > 0 || structures.some(s => graphTypes.has(s.type))
 
   return (
     <div className="flex flex-col gap-4 w-full">
-      {/* Graph canvas (tree + linkedlist) — single unified canvas */}
       {hasGraph && <GraphCanvas theme={theme} />}
-
-      {/* Block-style renderers for all other types */}
       {blockItems.map(item => (
         <StructureBlock key={item.name} item={item} theme={theme} />
       ))}
@@ -106,37 +103,56 @@ export default function VisualizerView({ variables, prevVariables, theme }) {
 }
 
 // ─── Unified graph canvas ─────────────────────────────────────────────────
+// Wraps ReactFlow in its own Provider so useReactFlow() works inside.
 
-function GraphCanvas({ theme }) {
+function GraphCanvasInner({ theme }) {
   const { nodes, edges, onNodesChange } = useGraphStore()
+  const { fitView } = useReactFlow()
 
-  // Estimate height from the deepest y position in nodes
+  // Re-fit every time nodes change so newly added nodes are always visible
+  useEffect(() => {
+    if (nodes.length > 0) {
+      // Small timeout lets React Flow finish its layout pass first
+      const id = setTimeout(() => fitView({ padding: 0.3, duration: 200 }), 50)
+      return () => clearTimeout(id)
+    }
+  }, [nodes, fitView])
+
+  // Height: deepest node y + node height estimate + padding
   const maxY = nodes.reduce((m, n) => Math.max(m, (n.position?.y ?? 0)), 0)
-  const height = Math.max(160, maxY + 120)
+  const height = Math.max(180, maxY + 130)
 
   return (
+    <div
+      style={{ width: '100%', height }}
+      className={`rounded-xl overflow-hidden border border-white/10 ${theme.sidebarBg}`}
+    >
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={NODE_TYPES}
+        onNodesChange={onNodesChange}
+        fitView
+        fitViewOptions={{ padding: 0.3 }}
+        nodesDraggable={true}
+        nodesConnectable={false}
+        elementsSelectable={false}
+        zoomOnScroll={false}
+        panOnScroll={false}
+        panOnDrag={true}
+        proOptions={{ hideAttribution: true }}
+        style={{ background: 'transparent' }}
+      >
+        <Background color="#334155" gap={20} size={1} variant="dots" />
+      </ReactFlow>
+    </div>
+  )
+}
+
+function GraphCanvas({ theme }) {
+  return (
     <ReactFlowProvider>
-      <div style={{ width: '100%', height }}
-           className={`rounded-xl overflow-hidden border border-white/10 ${theme.sidebarBg}`}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={NODE_TYPES}
-          onNodesChange={onNodesChange}
-          fitView
-          fitViewOptions={{ padding: 0.3 }}
-          nodesDraggable={true}
-          nodesConnectable={false}
-          elementsSelectable={false}
-          zoomOnScroll={false}
-          panOnScroll={false}
-          panOnDrag={true}
-          proOptions={{ hideAttribution: true }}
-          style={{ background: 'transparent' }}
-        >
-          <Background color="#334155" gap={20} size={1} variant="dots" />
-        </ReactFlow>
-      </div>
+      <GraphCanvasInner theme={theme} />
     </ReactFlowProvider>
   )
 }
@@ -145,10 +161,10 @@ function GraphCanvas({ theme }) {
 
 function StructureBlock({ item, theme }) {
   switch (item.type) {
-    case 'array':   return <ArrayBlock  item={item} theme={theme} />
-    case 'stack':   return <StackBlock  item={item} theme={theme} />
-    case 'queue':   return <QueueBlock  item={item} theme={theme} />
-    case 'object':  return <ObjectBlock item={item} theme={theme} />
+    case 'array':   return <ArrayBlock   item={item} theme={theme} />
+    case 'stack':   return <StackBlock   item={item} theme={theme} />
+    case 'queue':   return <QueueBlock   item={item} theme={theme} />
+    case 'object':  return <ObjectBlock  item={item} theme={theme} />
     default:        return <PrimitiveBlock item={item} theme={theme} />
   }
 }

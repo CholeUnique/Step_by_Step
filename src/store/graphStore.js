@@ -65,6 +65,8 @@ const useGraphStore = create((set, get) => ({
     const existingIds = new Set(prevNodes.map(n => n.id))
     const updatedNodes = [...prevNodes]
 
+    // Fallback x cursor for nodes that slipped through layout
+    let fallbackX = 20
     for (const [id, info] of objectMap.entries()) {
       const label = getLabel(info.value)
       const isNew = !existingIds.has(id)
@@ -87,11 +89,17 @@ const useGraphStore = create((set, get) => ({
       }
 
       if (isNew) {
+        // Use computed position, or fallback to a sensible default
+        let pos = positionMap.get(id)
+        if (!pos) {
+          pos = { x: fallbackX, y: 20 }
+          fallbackX += 150
+        }
         updatedNodes.push({
           id,
           type: 'glassNode',
           data: nodeData,
-          position: positionMap.get(id) ?? { x: 0, y: 0 },
+          position: pos,
         })
         existingIds.add(id)
       } else {
