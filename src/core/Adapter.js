@@ -17,6 +17,26 @@
 // Pseudo-object type strings used by js-interpreter
 const PRIMITIVE_TYPES = new Set(['number', 'string', 'boolean', 'undefined', 'null'])
 
+// ── Stable object identity ────────────────────────────────────────────────
+// We use a WeakMap keyed on the pseudo-object reference so the same
+// interpreter object always gets the same __id__ across snapshots.
+// This lets GraphStore identify "same node, different step".
+const _objIdMap = new WeakMap()
+let _objIdCounter = 0
+
+function getStableId(pseudoObj) {
+  if (!_objIdMap.has(pseudoObj)) {
+    _objIdMap.set(pseudoObj, `obj_${++_objIdCounter}`)
+  }
+  return _objIdMap.get(pseudoObj)
+}
+
+/** Call this whenever the interpreter is reset so IDs restart cleanly. */
+export function resetObjectIds() {
+  _objIdCounter = 0
+  // WeakMap entries are GC'd automatically — no manual clear needed.
+}
+
 /**
  * Convert a js-interpreter pseudo-value to a plain JS native value.
  * Safe against circular refs via depth limit.
@@ -49,6 +69,8 @@ function pseudoToNative(value, depth = 0) {
       return arr
     }
     const obj = {}
+    // Embed a stable ID so GraphStore can track identity across steps
+    obj.__id__ = getStableId(value)
     for (const key of Object.keys(value.properties)) {
       if (key === '__proto__') continue
       try {

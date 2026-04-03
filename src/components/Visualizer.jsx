@@ -1,7 +1,9 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import useThemeStore from '../store/themeStore.js'
 import useTimelineStore from '../store/timelineStore.js'
+import useGraphStore from '../store/graphStore.js'
 import VisualizerView from '../visualizer/VisualizerView.jsx'
+import { buildVisualizerState } from '../visualizer/VisualizerAdapter.js'
 
 /**
  * Visualizer: upper-right panel.
@@ -10,9 +12,28 @@ import VisualizerView from '../visualizer/VisualizerView.jsx'
 export default function Visualizer() {
   const { theme } = useThemeStore()
   const { timeline, currentStep, status } = useTimelineStore()
-  const snap = timeline[currentStep] ?? null
+  const { updateGraph, reset: resetGraph } = useGraphStore()
+
+  const snap     = timeline[currentStep] ?? null
   const prevSnap = currentStep > 0 ? (timeline[currentStep - 1] ?? null) : null
-  const total = timeline.length
+  const total    = timeline.length
+
+  // Feed GraphStore whenever the displayed snapshot changes
+  useEffect(() => {
+    if (!snap) return
+    const { structures } = buildVisualizerState(
+      { variables: snap.variables },
+      prevSnap ? { variables: prevSnap.variables } : null
+    )
+    updateGraph(structures, snap.step)
+  }, [snap, prevSnap, updateGraph])
+
+  // Reset the graph when a new program is loaded (timeline goes back to length 1)
+  useEffect(() => {
+    if (timeline.length <= 1) {
+      resetGraph()
+    }
+  }, [timeline.length, resetGraph])
 
   return (
     <div className={`
