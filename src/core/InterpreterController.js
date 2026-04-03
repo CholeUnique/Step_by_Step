@@ -13,6 +13,7 @@
 
 import Interpreter from 'js-interpreter'
 import { capture } from './Adapter.js'
+import { transformCode } from './codeTransformer.js'
 
 const MAX_STEPS = 1000
 
@@ -48,7 +49,8 @@ function initFunc(interpreter, globalObject) {
 }
 
 export function init(code) {
-  _interpreter = new Interpreter(code, initFunc)
+  const transformed = transformCode(code)
+  _interpreter = new Interpreter(transformed, initFunc)
   _stepCount = 0
   _running = false
 

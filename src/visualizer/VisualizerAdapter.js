@@ -1,61 +1,273 @@
 /**
- * VisualizerAdapter
+ * VisualizerAdapter (v2)
  *
- * Converts raw `variables` from a timeline snapshot into structured
- * semantic data for the VisualizerView to render.
+ * Converts two consecutive timeline snapshots (current + previous) into
+ * structured semantic data for VisualizerView to render.
  *
- * Rules (in priority order):
- *  - Array + name includes "stack"  → type: "stack"
- *  - Array + name includes "queue"  → type: "queue"
- *  - Array                          → type: "array"
- *  - object (non-null, non-array)
- *      + has val/value + left + right → type: "tree"   (future)
- *      + has val/value + next         → type: "linkedlist" (future)
- *      + otherwise                   → type: "object"
- *  - primitive                      → type: "primitive"
+ * Detection priority per variable:
+ *  1. isLinkedList(value)                     → type: "linkedlist"
+ *  2. isTree(value)                           → type: "tree"
+ *  3. Array.isArray(value)
+ *       + diff vs previous → stack behaviour  → type: "stack",  meta: { op }
+ *       + diff vs previous → queue behaviour  → type: "queue",  meta: { op }
+ *       + otherwise                           → type: "array"
+ *  4. typeof value === "object" (non-null)    → type: "object"
+ *  5. primitive                               → type: "primitive"
  *
- * Input:  visualState  — a timeline snapshot ({ variables, line, step, callStack })
- * Output: { structures: Array<StructureItem> }
+ * Stack heuristic (LIFO, based purely on diff — NOT variable name):
+ *   push: curr.length === prev.length + 1  AND  prev elements are a prefix of curr
+ *   pop:  curr.length === prev.length - 1  AND  curr elements are a prefix of prev
  *
- * StructureItem shape:
- *   { type: string, name: string, value: any }
+ * Queue heuristic (FIFO, based purely on diff — NOT variable name):
+ *   shift: curr.length === prev.length - 1  AND  first element differs (front dequeue)
+ *   enqueue: curr.length === prev.length + 1 AND last element added (rear enqueue)
+ *
+ * Input:
+ *   currentSnap  — timeline snapshot ({ variables, ... })
+ *   previousSnap — previous snapshot, or null for step 0
+ *
+ * Output:
+ *   { structures: Array<StructureItem> }
+ *
+ * StructureItem:
+ *   { type: string, name: string, value: any, meta?: object }
  */
+
+// ─── Public API ────────────────────────────────────────────────────────────
 
 /**
- * @param {{ variables: Object }} visualState
- * @returns {{ structures: Array<{type:string, name:string, value:any}> }}
+ * @param {{ variables: Object }} currentSnap
+ * @param {{ variables: Object } | null} previousSnap
+ * @returns {{ structures: Array }}
  */
-export function buildVisualizerState(visualState) {
-  const vars = visualState?.variables ?? {}
+export function buildVisualizerState(currentSnap, previousSnap) {
+  const curr = currentSnap?.variables ?? {}
+  const prev = previousSnap?.variables ?? {}
 
-  const structures = Object.entries(vars).map(([name, value]) => {
-    return { type: detectType(name, value), name, value }
+  const structures = Object.entries(curr).map(([name, value]) => {
+    const prevValue = prev[name]
+    return detectStructure(name, value, prevValue)
   })
 
   return { structures }
 }
 
-/**
- * Determine the semantic type of a variable.
- * @param {string} name
- * @param {*} value
- * @returns {string}
- */
-function detectType(name, value) {
+// ─── Structure detectors ───────────────────────────────────────────────────
+
+function detectStructure(name, value, prevValue) {
+  // 1. Linked list node
+  if (isLinkedList(value)) {
+    return { type: 'linkedlist', name, value }
+  }
+
+  // 2. Binary tree node
+  if (isTree(value)) {
+    return { type: 'tree', name, value }
+  }
+
+  // 3. Array with diff-based classification
   if (Array.isArray(value)) {
-    const lc = name.toLowerCase()
-    if (lc.includes('stack')) return 'stack'
-    if (lc.includes('queue')) return 'queue'
-    return 'array'
+    const prevArr = Array.isArray(prevValue) ? prevValue : null
+    const stackOp = prevArr !== null ? detectStackOp(prevArr, value) : null
+    const queueOp = prevArr !== null && !stackOp ? detectQueueOp(prevArr, value) : null
+
+    if (stackOp) return { type: 'stack', name, value, meta: { op: stackOp } }
+    if (queueOp) return { type: 'queue', name, value, meta: { op: queueOp } }
+    return { type: 'array', name, value }
   }
 
+  // 4. Plain object
   if (value !== null && typeof value === 'object') {
-    const keys = Object.keys(value)
-    const hasVal = keys.includes('val') || keys.includes('value')
-    if (hasVal && keys.includes('left') && keys.includes('right')) return 'tree'
-    if (hasVal && keys.includes('next')) return 'linkedlist'
-    return 'object'
+    return { type: 'object', name, value }
   }
 
-  return 'primitive'
+  // 5. Primitive
+  return { type: 'primitive', name, value }
+}
+
+/**
+ * Returns "push" | "pop" | null
+ * Stack = mutations always happen at the tail (LIFO).
+ */
+function detectStackOp(prev, curr) {
+  // push: curr is prev + one element appended at the end
+  if (curr.length === prev.length + 1) {
+    const isPrefixMatch = prev.every((v, i) => jsonEq(v, curr[i]))
+    if (isPrefixMatch) return 'push'
+  }
+  // pop: prev is curr + one element at the end
+  if (curr.length === prev.length - 1) {
+    const isPrefixMatch = curr.every((v, i) => jsonEq(v, prev[i]))
+    if (isPrefixMatch) return 'pop'
+  }
+  return null
+}
+
+/**
+ * Returns "shift" | "enqueue" | null
+ * Queue = mutations happen at the front (shift) or rear (enqueue).
+ */
+function detectQueueOp(prev, curr) {
+  // shift: one element removed from the front
+  if (curr.length === prev.length - 1) {
+    const frontChanged = !jsonEq(prev[0], curr[0])
+    if (frontChanged) {
+      // verify the rest of curr matches prev[1..]
+      const restMatch = curr.every((v, i) => jsonEq(v, prev[i + 1]))
+      if (restMatch) return 'shift'
+    }
+  }
+  // enqueue: one element appended at the rear
+  if (curr.length === prev.length + 1) {
+    const prevIsPrefix = prev.every((v, i) => jsonEq(v, curr[i]))
+    // but the stack check already caught this pattern when element added at tail —
+    // to distinguish, we rely on the queue heuristic only when a prior shift was seen
+    // (i.e., the variable has already been classified as queue at least once).
+    // For first occurrence we prefer "array" over misidentifying as queue.
+    if (prevIsPrefix) return 'enqueue'
+  }
+  return null
+}
+
+// ─── Type predicates ───────────────────────────────────────────────────────
+
+/**
+ * Linked list node: { val, next } or { value, next }
+ * next can be null (end of list) or another node object.
+ */
+function isLinkedList(node) {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return false
+  const keys = Object.keys(node)
+  const hasVal = keys.includes('val') || keys.includes('value')
+  const hasNext = keys.includes('next')
+  return hasVal && hasNext
+}
+
+/**
+ * Binary tree node: { val, left, right } or { value, left, right }
+ */
+function isTree(node) {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return false
+  const keys = Object.keys(node)
+  const hasVal = keys.includes('val') || keys.includes('value')
+  const hasLeft = keys.includes('left')
+  const hasRight = keys.includes('right')
+  return hasVal && hasLeft && hasRight
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
+function jsonEq(a, b) {
+  if (a === b) return true
+  try { return JSON.stringify(a) === JSON.stringify(b) } catch { return false }
+}
+
+// ─── Flow converters (used by VisualizerView) ──────────────────────────────
+
+/**
+ * Convert a linked list head node to React Flow nodes + edges.
+ * Guards against circular references with a max-node limit.
+ */
+export function listToFlow(head) {
+  const nodes = []
+  const edges = []
+  const MAX = 30
+  let current = head
+  let i = 0
+
+  while (current && i < MAX) {
+    const id = String(i)
+    const label = current.val !== undefined ? String(current.val) : String(current.value)
+
+    nodes.push({
+      id,
+      data: { label },
+      position: { x: i * 130, y: 0 },
+      style: {
+        borderRadius: 12,
+        padding: '6px 14px',
+        fontSize: 13,
+        fontWeight: 700,
+        fontFamily: 'monospace',
+      },
+    })
+
+    if (current.next && typeof current.next === 'object') {
+      edges.push({
+        id: `e${i}-${i + 1}`,
+        source: id,
+        target: String(i + 1),
+        type: 'smoothstep',
+        markerEnd: { type: 'arrowclosed' },
+        animated: false,
+      })
+    }
+
+    current = current.next
+    i++
+  }
+
+  return { nodes, edges }
+}
+
+/**
+ * Convert a binary tree root node to React Flow nodes + edges.
+ * Uses simple recursive level-order positioning.
+ */
+export function treeToFlow(root) {
+  const nodes = []
+  const edges = []
+  let idCounter = 0
+
+  function traverse(node, x, y, spread) {
+    if (!node || typeof node !== 'object') return null
+    const id = String(idCounter++)
+    const label = node.val !== undefined ? String(node.val) : String(node.value)
+
+    nodes.push({
+      id,
+      data: { label },
+      position: { x, y },
+      style: {
+        borderRadius: '50%',
+        width: 40,
+        height: 40,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 13,
+        fontWeight: 700,
+        fontFamily: 'monospace',
+        padding: 0,
+      },
+    })
+
+    if (node.left && typeof node.left === 'object') {
+      const leftId = String(idCounter)
+      traverse(node.left, x - spread, y + 80, spread / 2)
+      edges.push({
+        id: `e${id}-L`,
+        source: id,
+        target: leftId,
+        type: 'smoothstep',
+        markerEnd: { type: 'arrowclosed' },
+      })
+    }
+    if (node.right && typeof node.right === 'object') {
+      const rightId = String(idCounter)
+      traverse(node.right, x + spread, y + 80, spread / 2)
+      edges.push({
+        id: `e${id}-R`,
+        source: id,
+        target: rightId,
+        type: 'smoothstep',
+        markerEnd: { type: 'arrowclosed' },
+      })
+    }
+
+    return id
+  }
+
+  traverse(root, 200, 20, 120)
+  return { nodes, edges }
 }

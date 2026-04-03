@@ -11,6 +11,7 @@ export default function Visualizer() {
   const { theme } = useThemeStore()
   const { timeline, currentStep, status } = useTimelineStore()
   const snap = timeline[currentStep] ?? null
+  const prevSnap = currentStep > 0 ? (timeline[currentStep - 1] ?? null) : null
   const total = timeline.length
 
   return (
@@ -49,7 +50,11 @@ export default function Visualizer() {
           )}
 
           {/* Semantic structure visualizer (via VisualizerAdapter → VisualizerView) */}
-          <VisualizerView variables={snap.variables} theme={theme} />
+          <VisualizerView
+            variables={snap.variables}
+            prevVariables={prevSnap?.variables ?? null}
+            theme={theme}
+          />
 
           {/* Call stack frames */}
           <StackVisual callStack={snap.callStack} theme={theme} />
