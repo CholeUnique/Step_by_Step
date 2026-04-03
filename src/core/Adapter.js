@@ -7,114 +7,171 @@
  *   variables: Record<string, any>,
  *   callStack: string[],
  * }
+ *
+ * Key internals confirmed from js-interpreter source:
+ *   - interpreter.globalScope  → { object: { properties: {...} } }
+ *   - interpreter.stateStack[] → { node, scope, done }
+ *   - scope                    → { object: { properties: {...} } }
  */
+
+// Pseudo-object type strings used by js-interpreter
+const PRIMITIVE_TYPES = new Set(['number', 'string', 'boolean', 'undefined', 'null'])
 
 /**
- * Safely converts a JS-Interpreter pseudo-value to a plain JS native value.
- * We do NOT call interpreter.pseudoToNative because it can throw on circular refs.
+ * Convert a js-interpreter pseudo-value to a plain JS native value.
+ * Safe against circular refs via depth limit.
  */
 function pseudoToNative(value, depth = 0) {
-  if (depth > 4) return '[...]'
-  if (value === null || value === undefined) return null
+  if (depth > 5) return '[…]'
+  // Raw undefined → hoisted var, show as 'undefined' string for display
+  if (value === undefined) return undefined
+  if (value === null) return null
+
+  // Primitives stored directly
   if (typeof value !== 'object') return value
 
-  // Primitive wrapper
-  if (value.type === 'number' || value.type === 'string' || value.type === 'boolean') {
-    return value.data
-  }
+  // Interpreter wraps primitives in objects with a `type` discriminant
   if (value.type === 'undefined') return undefined
   if (value.type === 'null') return null
+  if (value.type === 'number') return value.data
+  if (value.type === 'string') return String(value.data)
+  if (value.type === 'boolean') return Boolean(value.data)
 
-  // JS-Interpreter Object / Array
-  if (value.properties) {
+  // Object / Array pseudo-objects have a `properties` map
+  if (value.properties && typeof value.properties === 'object') {
     const isArray = value.class === 'Array'
-    const result = isArray ? [] : {}
+    if (isArray) {
+      const len = value.properties.length?.data ?? Object.keys(value.properties).filter(k => !isNaN(k)).length
+      const arr = []
+      for (let i = 0; i < Math.min(len, 50); i++) {
+        arr.push(pseudoToNative(value.properties[i], depth + 1))
+      }
+      return arr
+    }
+    const obj = {}
     for (const key of Object.keys(value.properties)) {
       if (key === '__proto__') continue
       try {
-        const v = value.properties[key]
-        if (isArray && !isNaN(Number(key))) {
-          result[Number(key)] = pseudoToNative(v, depth + 1)
-        } else {
-          result[key] = pseudoToNative(v, depth + 1)
-        }
-      } catch (_) {
-        // skip unreadable props
-      }
+        obj[key] = pseudoToNative(value.properties[key], depth + 1)
+      } catch (_) { /* skip */ }
     }
-    return result
+    return obj
   }
 
-  // Plain value wrapper (data field)
+  // Raw data wrapper
   if ('data' in value) return value.data
 
-  return String(value)
+  return '[?]'
 }
 
 /**
- * Extract variables from a scope object.
+ * Extract variables from a single scope frame.
+ * Scope shape: { object: { properties: { varName: pseudoVal, ... } } }
  */
-function extractScope(scope) {
-  if (!scope || !scope.object || !scope.object.properties) return {}
-  const vars = {}
-  for (const key of Object.keys(scope.object.properties)) {
-    if (key === 'this' || key === 'arguments') continue
+function extractScopeVars(scope) {
+  const result = {}
+  if (!scope) return result
+  const props = scope.object?.properties ?? scope.properties ?? null
+  if (!props) return result
+  for (const key of Object.keys(props)) {
+    if (key === 'this' || key === 'arguments' || key === '__proto__') continue
+    // Skip built-ins that js-interpreter injects (window, self, etc.)
+    if (key === 'window' || key === 'self' || key === 'NaN' || key === 'Infinity' || key === 'undefined') continue
+    // Skip function definitions from variables panel (they clutter output)
+    const val = props[key]
+    if (val && (val.type === 'function' || val.class === 'Function')) continue
     try {
-      const raw = scope.object.properties[key]
-      vars[key] = pseudoToNative(raw)
+      result[key] = pseudoToNative(val)
     } catch (_) {
-      vars[key] = '<?>'
+      result[key] = '<?>'
     }
   }
-  return vars
+  return result
 }
 
 /**
- * Extract the call stack from interpreter.stateStack.
- * Each entry in stateStack has a `node` (AST node).
+ * Walk the stateStack to collect all visible variable scopes.
+ * We merge from global → innermost so inner frames shadow outer.
  */
-function extractCallStack(stateStack) {
-  if (!stateStack || !Array.isArray(stateStack)) return ['(global)']
-  const frames = []
-  for (let i = stateStack.length - 1; i >= 0; i--) {
-    const state = stateStack[i]
-    const node = state.node
-    if (!node) continue
-    if (node.type === 'Program') {
-      frames.push('(global)')
-      break
-    }
-    if (node.type === 'CallExpression') {
-      const callee = node.callee
-      if (callee) {
-        if (callee.type === 'Identifier') {
-          frames.push(callee.name + '()')
-        } else if (callee.type === 'MemberExpression') {
-          const obj = callee.object && callee.object.name ? callee.object.name : '?'
-          const prop = callee.property && callee.property.name ? callee.property.name : '?'
-          frames.push(`${obj}.${prop}()`)
-        } else {
-          frames.push('(anonymous)()')
-        }
+function extractVariables(interpreter) {
+  const merged = {}
+
+  // Global scope first
+  if (interpreter.globalScope) {
+    Object.assign(merged, extractScopeVars(interpreter.globalScope))
+  }
+
+  // Then each frame's scope (bottom to top of stateStack)
+  if (Array.isArray(interpreter.stateStack)) {
+    for (const state of interpreter.stateStack) {
+      if (state.scope && state.scope !== interpreter.globalScope) {
+        Object.assign(merged, extractScopeVars(state.scope))
       }
     }
+  }
+
+  return merged
+}
+
+/**
+ * Build a human-readable call stack from stateStack nodes.
+ * Walks top-down (innermost first).
+ */
+function extractCallStack(stateStack) {
+  if (!Array.isArray(stateStack) || stateStack.length === 0) return ['(global)']
+
+  const frames = []
+  const seen = new Set()
+
+  for (let i = stateStack.length - 1; i >= 0; i--) {
+    const node = stateStack[i]?.node
+    if (!node) continue
+
+    if (node.type === 'Program') {
+      if (!seen.has('(global)')) {
+        frames.push('(global)')
+        seen.add('(global)')
+      }
+      break
+    }
+
     if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') {
-      const name = (node.id && node.id.name) ? node.id.name + '()' : '(fn)()'
-      if (!frames.includes(name)) frames.push(name)
+      const name = node.id?.name ? `${node.id.name}()` : '(anonymous)()'
+      if (!seen.has(name)) {
+        frames.push(name)
+        seen.add(name)
+      }
+    }
+
+    if (node.type === 'CallExpression') {
+      const callee = node.callee
+      let name = '(call)'
+      if (callee?.type === 'Identifier') {
+        name = `${callee.name}()`
+      } else if (callee?.type === 'MemberExpression') {
+        const obj = callee.object?.name ?? '?'
+        const prop = callee.property?.name ?? '?'
+        name = `${obj}.${prop}()`
+      }
+      if (!seen.has(name)) {
+        frames.push(name)
+        seen.add(name)
+      }
     }
   }
+
   if (frames.length === 0) frames.push('(global)')
   return frames
 }
 
 /**
- * Get current executing line from stateStack.
+ * Find the current line number from stateStack (deepest node with loc).
  */
 function extractLine(stateStack) {
-  if (!stateStack || !Array.isArray(stateStack)) return null
+  if (!Array.isArray(stateStack)) return null
   for (let i = stateStack.length - 1; i >= 0; i--) {
-    const node = stateStack[i] && stateStack[i].node
-    if (node && node.loc && node.loc.start) {
+    const node = stateStack[i]?.node
+    if (node?.loc?.start?.line != null) {
       return node.loc.start.line
     }
   }
@@ -122,47 +179,18 @@ function extractLine(stateStack) {
 }
 
 /**
- * Extract all variables visible in the current scope chain.
- */
-function extractVariables(interpreter) {
-  const allVars = {}
-
-  // Walk scope chain bottom-up (global first, then local frames)
-  const scopes = []
-  let scope = interpreter.getScope ? interpreter.getScope() : null
-
-  // Also try globalScope
-  if (interpreter.globalScope) {
-    scopes.push(interpreter.globalScope)
-  }
-
-  // Current scope from stateStack
-  if (interpreter.stateStack && Array.isArray(interpreter.stateStack)) {
-    for (const state of interpreter.stateStack) {
-      if (state.scope) scopes.push(state.scope)
-    }
-  }
-
-  for (const s of scopes) {
-    Object.assign(allVars, extractScope(s))
-  }
-
-  return allVars
-}
-
-/**
- * Main capture function — the only public API.
+ * Main public API: capture a VisualState snapshot from the interpreter.
+ *
+ * @param {object} interpreter - js-interpreter instance
+ * @param {number} stepIndex   - current step counter
+ * @returns {VisualState}
  */
 export function capture(interpreter, stepIndex) {
-  const stateStack = interpreter.stateStack || []
-  const line = extractLine(stateStack)
-  const variables = extractVariables(interpreter)
-  const callStack = extractCallStack(stateStack)
-
+  const stateStack = interpreter.stateStack ?? []
   return {
     step: stepIndex,
-    line,
-    variables,
-    callStack,
+    line: extractLine(stateStack),
+    variables: extractVariables(interpreter),
+    callStack: extractCallStack(stateStack),
   }
 }

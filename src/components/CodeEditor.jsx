@@ -3,14 +3,18 @@ import MonacoEditor from '@monaco-editor/react'
 import useThemeStore from '../store/themeStore.js'
 import useTimelineStore from '../store/timelineStore.js'
 
-const DEFAULT_CODE = `function add(a, b) {
-  return a + b;
+// Inject line-highlight CSS once
+let styleInjected = false
+function injectHighlightStyle() {
+  if (styleInjected) return
+  styleInjected = true
+  const el = document.createElement('style')
+  el.textContent = [
+    '.current-line-highlight { background: rgba(255,200,0,0.18) !important; border-left: 3px solid #f59e0b !important; }',
+    '.current-line-glyph::before { content: "▶"; color: #f59e0b; font-size: 10px; margin-left: 2px; }',
+  ].join('\n')
+  document.head.appendChild(el)
 }
-
-let x = add(1, 2);
-let y = add(x, 10);
-console.log(y);
-`
 
 export default function CodeEditor({ code, onChange }) {
   const { theme } = useThemeStore()
@@ -18,7 +22,7 @@ export default function CodeEditor({ code, onChange }) {
   const editorRef = useRef(null)
   const decorationsRef = useRef([])
 
-  // Highlight current executing line
+  // Sync highlight whenever step changes
   useEffect(() => {
     const editor = editorRef.current
     if (!editor) return
@@ -27,7 +31,7 @@ export default function CodeEditor({ code, onChange }) {
 
     decorationsRef.current = editor.deltaDecorations(
       decorationsRef.current,
-      line
+      line != null
         ? [{
             range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 },
             options: {
@@ -40,24 +44,9 @@ export default function CodeEditor({ code, onChange }) {
     )
   }, [currentStep, timeline])
 
-  function handleEditorDidMount(editor) {
+  function handleMount(editor) {
     editorRef.current = editor
-
-    // Inject highlight style
-    const style = document.createElement('style')
-    style.innerHTML = `
-      .current-line-highlight {
-        background: rgba(255, 200, 0, 0.18) !important;
-        border-left: 3px solid #f59e0b !important;
-      }
-      .current-line-glyph::before {
-        content: '▶';
-        color: #f59e0b;
-        font-size: 10px;
-        margin-left: 2px;
-      }
-    `
-    document.head.appendChild(style)
+    injectHighlightStyle()
   }
 
   return (
@@ -68,7 +57,7 @@ export default function CodeEditor({ code, onChange }) {
         theme={theme.monacoTheme}
         value={code}
         onChange={val => onChange(val ?? '')}
-        onMount={handleEditorDidMount}
+        onMount={handleMount}
         options={{
           fontSize: 14,
           fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, monospace',
@@ -83,7 +72,7 @@ export default function CodeEditor({ code, onChange }) {
           autoIndent: 'full',
           formatOnPaste: true,
           wordWrap: 'on',
-          renderLineHighlight: 'none', // we do our own
+          renderLineHighlight: 'none',
           smoothScrolling: true,
           cursorBlinking: 'smooth',
           cursorSmoothCaretAnimation: 'on',

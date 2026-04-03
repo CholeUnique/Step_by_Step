@@ -16,9 +16,9 @@ const DEFAULT_CODE = `function add(a, b) {
   return a + b;
 }
 
-let x = add(1, 2);
-let y = add(x, 10);
-console.log(y);
+var x = add(1, 2);
+var y = add(x, 10);
+var msg = "Result: " + y;
 `
 
 export default function App() {
