@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(node -e \"const I = require\\(''''./node_modules/js-interpreter/acorn_interpreter.js''''\\); console.log\\(typeof I\\)\")",
+      "Bash(node -e \"import\\(''''./node_modules/js-interpreter/lib/js-interpreter.js''''\\).then\\(m=>console.log\\(Object.keys\\(m\\)\\)\\)\")"
+    ]
+  }
+}

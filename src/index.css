@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Allotment sash (divider) override */
+.allotment-module_splitView__L-yRc {
+  height: 100%;
+}
+
+:root {
+  --sash-size: 6px;
+  --sash-hover-size: 6px;
+}
