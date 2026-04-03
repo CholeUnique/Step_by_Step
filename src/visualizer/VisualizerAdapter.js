@@ -181,15 +181,9 @@ export function listToFlow(head) {
 
     nodes.push({
       id,
+      type: 'glassNode',
       data: { label },
-      position: { x: i * 130, y: 0 },
-      style: {
-        borderRadius: 12,
-        padding: '6px 14px',
-        fontSize: 13,
-        fontWeight: 700,
-        fontFamily: 'monospace',
-      },
+      position: { x: i * 140, y: 0 },
     })
 
     if (current.next && typeof current.next === 'object') {
@@ -197,9 +191,11 @@ export function listToFlow(head) {
         id: `e${i}-${i + 1}`,
         source: id,
         target: String(i + 1),
+        label: 'next',
         type: 'smoothstep',
         markerEnd: { type: 'arrowclosed' },
-        animated: false,
+        style: { strokeWidth: 1.5 },
+        labelStyle: { fontSize: 10, fill: '#94a3b8' },
       })
     }
 
@@ -207,12 +203,32 @@ export function listToFlow(head) {
     i++
   }
 
+  // Append null sentinel node
+  nodes.push({
+    id: String(i),
+    type: 'nullNode',
+    data: { label: 'null' },
+    position: { x: i * 140, y: 0 },
+  })
+  if (i > 0) {
+    edges.push({
+      id: `e${i - 1}-null`,
+      source: String(i - 1),
+      target: String(i),
+      label: 'next',
+      type: 'smoothstep',
+      markerEnd: { type: 'arrowclosed' },
+      style: { strokeWidth: 1.5, strokeDasharray: '4 2' },
+      labelStyle: { fontSize: 10, fill: '#94a3b8' },
+    })
+  }
+
   return { nodes, edges }
 }
 
 /**
  * Convert a binary tree root node to React Flow nodes + edges.
- * Uses simple recursive level-order positioning.
+ * Assigns each node an id before recursing so edge targets are always valid.
  */
 export function treeToFlow(root) {
   const nodes = []
@@ -221,53 +237,53 @@ export function treeToFlow(root) {
 
   function traverse(node, x, y, spread) {
     if (!node || typeof node !== 'object') return null
+
+    // Assign this node's id immediately
     const id = String(idCounter++)
     const label = node.val !== undefined ? String(node.val) : String(node.value)
 
     nodes.push({
       id,
+      type: 'glassNode',
       data: { label },
       position: { x, y },
-      style: {
-        borderRadius: '50%',
-        width: 40,
-        height: 40,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 13,
-        fontWeight: 700,
-        fontFamily: 'monospace',
-        padding: 0,
-      },
     })
 
+    // Recurse left — child will receive the next available id (idCounter at this moment)
     if (node.left && typeof node.left === 'object') {
-      const leftId = String(idCounter)
-      traverse(node.left, x - spread, y + 80, spread / 2)
+      const leftId = String(idCounter) // peek: this is what traverse will assign
+      traverse(node.left, x - spread, y + 90, Math.max(spread / 2, 30))
       edges.push({
         id: `e${id}-L`,
         source: id,
         target: leftId,
+        label: 'left',
         type: 'smoothstep',
         markerEnd: { type: 'arrowclosed' },
+        style: { strokeWidth: 1.5 },
+        labelStyle: { fontSize: 10, fill: '#94a3b8' },
       })
     }
+
+    // Recurse right
     if (node.right && typeof node.right === 'object') {
-      const rightId = String(idCounter)
-      traverse(node.right, x + spread, y + 80, spread / 2)
+      const rightId = String(idCounter) // peek again after left subtree consumed ids
+      traverse(node.right, x + spread, y + 90, Math.max(spread / 2, 30))
       edges.push({
         id: `e${id}-R`,
         source: id,
         target: rightId,
+        label: 'right',
         type: 'smoothstep',
         markerEnd: { type: 'arrowclosed' },
+        style: { strokeWidth: 1.5 },
+        labelStyle: { fontSize: 10, fill: '#94a3b8' },
       })
     }
 
     return id
   }
 
-  traverse(root, 200, 20, 120)
+  traverse(root, 200, 20, 130)
   return { nodes, edges }
 }

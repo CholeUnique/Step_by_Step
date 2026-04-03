@@ -59,6 +59,48 @@ export function init(code) {
   _storeApi.getState().resetTimeline([snap])
 }
 
+/** Return the source line of the top-most stateStack entry that has loc info. */
+function getCurrentLine(interp) {
+  const stack = interp.stateStack
+  if (!Array.isArray(stack)) return null
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const line = stack[i]?.node?.loc?.start?.line
+    if (line != null) return line
+  }
+  return null
+}
+
+/**
+ * Advance the interpreter until the source line changes (or execution ends).
+ * Returns { hasMore, changed } so callers know whether to push a snapshot.
+ *
+ * We cap the inner loop at MAX_AST_STEPS to avoid an infinite loop on
+ * programs that never change line (e.g. a single-expression program).
+ */
+const MAX_AST_STEPS = 2000
+
+function stepToNextLine() {
+  const startLine = getCurrentLine(_interpreter)
+  let hasMore = true
+  let innerSteps = 0
+
+  try {
+    while (innerSteps < MAX_AST_STEPS) {
+      hasMore = _interpreter.step()
+      innerSteps++
+      if (!hasMore) break
+      const newLine = getCurrentLine(_interpreter)
+      if (newLine !== startLine && newLine != null) break
+    }
+  } catch (err) {
+    console.error('[InterpreterController] step error:', err)
+    _storeApi.getState().setStatus('finished')
+    return false
+  }
+
+  return hasMore
+}
+
 export function step() {
   if (!_interpreter) return false
   if (_stepCount >= MAX_STEPS) {
@@ -66,14 +108,7 @@ export function step() {
     return false
   }
 
-  let hasMore = false
-  try {
-    hasMore = _interpreter.step()
-  } catch (err) {
-    console.error('[InterpreterController] step error:', err)
-    _storeApi.getState().setStatus('finished')
-    return false
-  }
+  const hasMore = stepToNextLine()
 
   _stepCount++
   const snap = capture(_interpreter, _stepCount)

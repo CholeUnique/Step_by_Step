@@ -8,7 +8,8 @@
       "Bash(node -e \"import\\(''''./node_modules/js-interpreter/lib/js-interpreter.js''''\\).then\\(m=>console.log\\(Object.keys\\(m\\)\\)\\)\")",
       "Bash(node -e \":*)",
       "Bash(node --input-type=module:*)",
-      "Bash(curl -s http://localhost:5173)"
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(node -e \"const rf = require\\(''./node_modules/reactflow/package.json''\\); console.log\\(rf.version, rf.exports ? Object.keys\\(rf.exports\\).slice\\(0,5\\) : ''no exports''\\)\")"
     ]
   }
 }

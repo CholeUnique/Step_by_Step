@@ -1,23 +1,66 @@
-import React, { useMemo } from 'react'
-import ReactFlow, { Background, Controls, MarkerType } from 'reactflow'
+import React, { useMemo, useCallback } from 'react'
+import ReactFlow, {
+  Background,
+  Controls,
+  ReactFlowProvider,
+  MarkerType,
+  useReactFlow,
+} from 'reactflow'
 import 'reactflow/dist/style.css'
 import { buildVisualizerState, listToFlow, treeToFlow } from './VisualizerAdapter.js'
 
-/**
- * VisualizerView (v2)
- *
- * Renders structured semantic data from VisualizerAdapter.
- * - tree / linkedlist  → React Flow canvas
- * - array / stack / queue / object / primitive → CSS block layout
- *
- * Props:
- *   variables     {Object}  current step variables
- *   prevVariables {Object}  previous step variables (for diff-based detection)
- *   theme         {Object}  theme tokens from themeStore
- */
+// ─── Custom node types ────────────────────────────────────────────────────
+// Defined outside the component so they are stable references (no re-renders).
+
+function GlassNode({ data }) {
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.08)',
+      border: '1.5px solid rgba(255,255,255,0.18)',
+      backdropFilter: 'blur(8px)',
+      borderRadius: 12,
+      padding: '6px 16px',
+      minWidth: 40,
+      textAlign: 'center',
+      fontSize: 13,
+      fontWeight: 700,
+      fontFamily: 'monospace',
+      color: '#e2e8f0',
+      boxShadow: '0 2px 12px rgba(0,0,0,0.25)',
+      userSelect: 'none',
+    }}>
+      {data.label}
+    </div>
+  )
+}
+
+function NullNode({ data }) {
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.03)',
+      border: '1.5px dashed rgba(255,255,255,0.15)',
+      borderRadius: 12,
+      padding: '6px 14px',
+      fontSize: 12,
+      fontFamily: 'monospace',
+      color: '#64748b',
+      userSelect: 'none',
+    }}>
+      ∅
+    </div>
+  )
+}
+
+const NODE_TYPES = { glassNode: GlassNode, nullNode: NullNode }
+
+// ─── Main component ───────────────────────────────────────────────────────
+
 export default function VisualizerView({ variables, prevVariables, theme }) {
   const { structures } = useMemo(
-    () => buildVisualizerState({ variables }, prevVariables ? { variables: prevVariables } : null),
+    () => buildVisualizerState(
+      { variables },
+      prevVariables ? { variables: prevVariables } : null
+    ),
     [variables, prevVariables]
   )
 
@@ -135,7 +178,7 @@ function QueueBlock({ item, theme }) {
         ) : arr.map((v, i) => (
           <React.Fragment key={i}>
             <div className={`flex flex-col items-center rounded-xl px-3 py-1.5 min-w-[2.5rem] ${theme.sidebarBg} border border-emerald-400/20 transition-all duration-200`}>
-              <span className={`text-[10px] text-emerald-400 leading-none mb-0.5`}>
+              <span className="text-[10px] text-emerald-400 leading-none mb-0.5">
                 {i === 0 ? 'front' : i === arr.length - 1 ? 'rear' : '\u00a0'}
               </span>
               <span className={`text-sm font-mono font-bold ${theme.text}`}>{fmt(v)}</span>
@@ -189,21 +232,20 @@ function PrimitiveBlock({ item, theme }) {
   )
 }
 
-// ─── Linked List (React Flow) ─────────────────────────────────────────────
+// ─── Flow canvas wrapper (shared) ─────────────────────────────────────────
 
-function LinkedListBlock({ item, theme }) {
-  const { nodes, edges } = useMemo(() => listToFlow(item.value), [item.value])
-
-  // width = nodes * 130 + padding, capped at parent width
-  const canvasW = Math.max(300, nodes.length * 130 + 60)
-
+/**
+ * ReactFlow MUST be inside ReactFlowProvider and its direct container must
+ * have an explicit pixel height — percentage heights don't work.
+ */
+function FlowCanvas({ nodes, edges, height = 120 }) {
   return (
-    <div>
-      <SectionLabel name={item.name} type="linkedlist" theme={theme} />
-      <div style={{ height: 90, width: '100%', overflow: 'hidden' }}>
+    <ReactFlowProvider>
+      <div style={{ width: '100%', height }}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          nodeTypes={NODE_TYPES}
           fitView
           fitViewOptions={{ padding: 0.3 }}
           nodesDraggable={false}
@@ -213,44 +255,47 @@ function LinkedListBlock({ item, theme }) {
           panOnScroll={false}
           panOnDrag={false}
           proOptions={{ hideAttribution: true }}
-          style={{ borderRadius: 12, background: 'transparent' }}
-        />
+          style={{ background: 'transparent' }}
+        >
+          <Background color="#334155" gap={20} size={1} variant="dots" />
+        </ReactFlow>
+      </div>
+    </ReactFlowProvider>
+  )
+}
+
+// ─── Linked List ──────────────────────────────────────────────────────────
+
+function LinkedListBlock({ item, theme }) {
+  const { nodes, edges } = useMemo(() => listToFlow(item.value), [item.value])
+  // Height is fixed; width scales via fitView
+  return (
+    <div>
+      <SectionLabel name={item.name} type="linkedlist" theme={theme} />
+      <div className={`rounded-xl overflow-hidden border border-yellow-400/10 ${theme.sidebarBg}`}>
+        <FlowCanvas nodes={nodes} edges={edges} height={100} />
       </div>
     </div>
   )
 }
 
-// ─── Binary Tree (React Flow) ─────────────────────────────────────────────
+// ─── Binary Tree ──────────────────────────────────────────────────────────
+
+function treeDepth(node) {
+  if (!node || typeof node !== 'object') return 0
+  return 1 + Math.max(treeDepth(node.left), treeDepth(node.right))
+}
 
 function TreeBlock({ item, theme }) {
   const { nodes, edges } = useMemo(() => treeToFlow(item.value), [item.value])
-
-  // Estimate height from depth
-  function treeDepth(node, d = 0) {
-    if (!node || typeof node !== 'object') return d
-    return Math.max(treeDepth(node.left, d + 1), treeDepth(node.right, d + 1))
-  }
   const depth = treeDepth(item.value)
-  const canvasH = Math.max(140, depth * 90 + 60)
+  const height = Math.max(160, depth * 100 + 60)
 
   return (
     <div>
       <SectionLabel name={item.name} type="tree" theme={theme} />
-      <div style={{ height: canvasH, width: '100%', overflow: 'hidden' }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          fitView
-          fitViewOptions={{ padding: 0.25 }}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={false}
-          zoomOnScroll={false}
-          panOnScroll={false}
-          panOnDrag={false}
-          proOptions={{ hideAttribution: true }}
-          style={{ borderRadius: 12, background: 'transparent' }}
-        />
+      <div className={`rounded-xl overflow-hidden border border-pink-400/10 ${theme.sidebarBg}`}>
+        <FlowCanvas nodes={nodes} edges={edges} height={height} />
       </div>
     </div>
   )
