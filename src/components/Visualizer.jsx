@@ -1,12 +1,11 @@
 import React from 'react'
 import useThemeStore from '../store/themeStore.js'
 import useTimelineStore from '../store/timelineStore.js'
+import VisualizerView from '../visualizer/VisualizerView.jsx'
 
 /**
  * Visualizer: upper-right panel.
- * Shows a modern graphical representation of the current step's data.
- * React Flow will be wired here in a future phase.
- * For MVP: renders a clean visual card layout of variables + step counter.
+ * Delegates variable rendering to VisualizerView (via VisualizerAdapter).
  */
 export default function Visualizer() {
   const { theme } = useThemeStore()
@@ -49,10 +48,10 @@ export default function Visualizer() {
             <LineCard line={snap.line} theme={theme} />
           )}
 
-          {/* Variable cards */}
-          <VarCards variables={snap.variables} theme={theme} />
+          {/* Semantic structure visualizer (via VisualizerAdapter → VisualizerView) */}
+          <VisualizerView variables={snap.variables} theme={theme} />
 
-          {/* Stack visual */}
+          {/* Call stack frames */}
           <StackVisual callStack={snap.callStack} theme={theme} />
         </div>
       )}
@@ -89,33 +88,6 @@ function LineCard({ line, theme }) {
   )
 }
 
-function VarCards({ variables, theme }) {
-  const entries = Object.entries(variables)
-  if (entries.length === 0) return null
-  return (
-    <div>
-      <p className={`text-xs font-semibold uppercase tracking-wider ${theme.subText} mb-1.5 select-none`}>Memory</p>
-      <div className="grid grid-cols-2 gap-2">
-        {entries.map(([k, v]) => (
-          <div
-            key={k}
-            className={`
-              rounded-xl px-3 py-2 flex flex-col gap-0.5
-              ${theme.sidebarBg}
-              transition-all duration-200
-            `}
-          >
-            <span className={`text-xs font-mono font-semibold ${theme.jsonKey} truncate`}>{k}</span>
-            <span className={`text-sm font-mono font-bold ${theme.text} truncate`}>
-              {formatVal(v)}
-            </span>
-            <span className={`text-xs ${theme.subText}`}>{typeOf(v)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 function StackVisual({ callStack, theme }) {
   if (!callStack || callStack.length === 0) return null
@@ -162,16 +134,3 @@ function PlaceholderGrid({ theme }) {
   )
 }
 
-function formatVal(v) {
-  if (v === null) return 'null'
-  if (v === undefined) return 'undef'
-  if (typeof v === 'string') return `"${v}"`
-  if (typeof v === 'object') return Array.isArray(v) ? `[…${v.length}]` : '{…}'
-  return String(v)
-}
-
-function typeOf(v) {
-  if (v === null) return 'null'
-  if (Array.isArray(v)) return 'array'
-  return typeof v
-}
