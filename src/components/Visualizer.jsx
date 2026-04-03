@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef } from 'react'
 import useThemeStore from '../store/themeStore.js'
 import useTimelineStore from '../store/timelineStore.js'
 import useGraphStore from '../store/graphStore.js'
@@ -12,28 +12,38 @@ import { buildVisualizerState } from '../visualizer/VisualizerAdapter.js'
 export default function Visualizer() {
   const { theme } = useThemeStore()
   const { timeline, currentStep, status } = useTimelineStore()
-  const { updateGraph, reset: resetGraph } = useGraphStore()
+
+  // Use stable selectors so useEffect deps don't spuriously re-fire
+  const updateGraph = useGraphStore(s => s.updateGraph)
+  const resetGraph  = useGraphStore(s => s.reset)
 
   const snap     = timeline[currentStep] ?? null
   const prevSnap = currentStep > 0 ? (timeline[currentStep - 1] ?? null) : null
   const total    = timeline.length
 
+  // Track last fed step to avoid duplicate calls
+  const lastFedStep = useRef(-1)
+
   // Feed GraphStore whenever the displayed snapshot changes
   useEffect(() => {
     if (!snap) return
+    if (snap.step === lastFedStep.current) return
+    lastFedStep.current = snap.step
+
     const { structures } = buildVisualizerState(
       { variables: snap.variables },
       prevSnap ? { variables: prevSnap.variables } : null
     )
     updateGraph(structures, snap.step)
-  }, [snap, prevSnap, updateGraph])
+  }, [snap, prevSnap])   // intentionally exclude updateGraph — it's stable via selector
 
   // Reset the graph when a new program is loaded (timeline goes back to length 1)
   useEffect(() => {
     if (timeline.length <= 1) {
+      lastFedStep.current = -1
       resetGraph()
     }
-  }, [timeline.length, resetGraph])
+  }, [timeline.length])  // intentionally exclude resetGraph
 
   return (
     <div className={`

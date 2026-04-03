@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useCallback } from 'react'
+import React, { useMemo, useEffect, useRef, useState } from 'react'
 import ReactFlow, {
   Background,
   ReactFlowProvider,
@@ -8,39 +8,44 @@ import 'reactflow/dist/style.css'
 import { buildVisualizerState } from './VisualizerAdapter.js'
 import useGraphStore from '../store/graphStore.js'
 
-// ─── Custom node types (defined at module level — stable references) ──────
+// ─── Custom node types (module-level — stable references) ────────────────
 
 function GlassNode({ data }) {
   const active = data.isActive
+  // Theme-aware colors passed via data, with fallback to defaults
+  const activeColor   = data.activeColor   ?? 'rgba(74,222,128,0.85)'
+  const activeBg      = data.activeBg      ?? 'rgba(74,222,128,0.18)'
+  const activeGlow    = data.activeGlow    ?? 'rgba(74,222,128,0.5)'
+  const activeTxt     = data.activeTxt     ?? '#4ade80'
+
   return (
-    <div
-      style={{
-        background: active ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.08)',
-        border: active ? '2px solid rgba(74,222,128,0.8)' : '1.5px solid rgba(255,255,255,0.18)',
-        backdropFilter: 'blur(8px)',
-        borderRadius: 12,
-        padding: '6px 16px',
-        minWidth: 42,
-        textAlign: 'center',
-        fontSize: 13,
-        fontWeight: 700,
-        fontFamily: 'monospace',
-        color: active ? '#4ade80' : '#e2e8f0',
-        boxShadow: active
-          ? '0 0 16px rgba(74,222,128,0.5), 0 2px 8px rgba(0,0,0,0.3)'
-          : '0 2px 12px rgba(0,0,0,0.25)',
-        transition: 'all 0.3s ease',
-        userSelect: 'none',
-      }}
-    >
+    <div style={{
+      background: active ? activeBg : 'rgba(255,255,255,0.09)',
+      border: `2px solid ${active ? activeColor : 'rgba(255,255,255,0.20)'}`,
+      backdropFilter: 'blur(10px)',
+      borderRadius: 12,
+      padding: '7px 18px',
+      minWidth: 44,
+      textAlign: 'center',
+      fontSize: 14,
+      fontWeight: 700,
+      fontFamily: 'monospace',
+      color: active ? activeTxt : '#e2e8f0',
+      boxShadow: active
+        ? `0 0 18px ${activeGlow}, 0 2px 8px rgba(0,0,0,0.35)`
+        : '0 2px 14px rgba(0,0,0,0.28)',
+      transition: 'all 0.3s ease',
+      userSelect: 'none',
+      cursor: 'grab',
+    }}>
       {data.label}
       {data.varName && (
         <div style={{
           fontSize: 9,
           fontWeight: 400,
-          color: active ? 'rgba(74,222,128,0.7)' : 'rgba(148,163,184,0.7)',
-          marginTop: 2,
-          letterSpacing: '0.03em',
+          color: active ? `${activeTxt}b3` : 'rgba(148,163,184,0.6)',
+          marginTop: 3,
+          letterSpacing: '0.04em',
         }}>
           {data.varName}
         </div>
@@ -53,12 +58,12 @@ function NullNode() {
   return (
     <div style={{
       background: 'rgba(255,255,255,0.03)',
-      border: '1.5px dashed rgba(255,255,255,0.15)',
-      borderRadius: 12,
-      padding: '6px 14px',
+      border: '1.5px dashed rgba(255,255,255,0.13)',
+      borderRadius: 10,
+      padding: '5px 12px',
       fontSize: 12,
       fontFamily: 'monospace',
-      color: '#64748b',
+      color: '#475569',
       userSelect: 'none',
     }}>
       ∅
@@ -66,7 +71,6 @@ function NullNode() {
   )
 }
 
-// Must be stable — defined outside any component
 const NODE_TYPES = { glassNode: GlassNode, nullNode: NullNode }
 
 // ─── Main component ───────────────────────────────────────────────────────
@@ -80,17 +84,16 @@ export default function VisualizerView({ variables, prevVariables, theme }) {
     [variables, prevVariables]
   )
 
-  // Subscribe to graphStore to decide whether to show the canvas
-  const graphNodes = useGraphStore(s => s.nodes)
+  // Authoritative: show graph canvas if store has nodes OR structures declare graph types
+  const graphNodeCount = useGraphStore(s => s.nodes.length)
+  const graphTypes = new Set(['tree', 'linkedlist'])
 
   if (!structures || structures.length === 0) {
     return <p className={`text-xs ${theme.subText} select-none`}>No variables</p>
   }
 
-  const graphTypes = new Set(['tree', 'linkedlist'])
   const blockItems = structures.filter(s => !graphTypes.has(s.type))
-  // Show canvas when store has nodes (authoritative) OR structures declare graph types
-  const hasGraph = graphNodes.length > 0 || structures.some(s => graphTypes.has(s.type))
+  const hasGraph   = graphNodeCount > 0 || structures.some(s => graphTypes.has(s.type))
 
   return (
     <div className="flex flex-col gap-4 w-full">
@@ -102,38 +105,67 @@ export default function VisualizerView({ variables, prevVariables, theme }) {
   )
 }
 
-// ─── Unified graph canvas ─────────────────────────────────────────────────
-// Wraps ReactFlow in its own Provider so useReactFlow() works inside.
+// ─── Graph canvas ─────────────────────────────────────────────────────────
 
 function GraphCanvasInner({ theme }) {
-  const { nodes, edges, onNodesChange } = useGraphStore()
-  const { fitView } = useReactFlow()
+  const nodes         = useGraphStore(s => s.nodes)
+  const edges         = useGraphStore(s => s.edges)
+  const onNodesChange = useGraphStore(s => s.onNodesChange)
+  const { fitView }   = useReactFlow()
+  const fittedRef     = useRef(false)
+  const [ready, setReady] = useState(false)
 
-  // Re-fit every time nodes change so newly added nodes are always visible
+  // Mark ready after first paint so ReactFlow has measured its container
   useEffect(() => {
-    if (nodes.length > 0) {
-      // Small timeout lets React Flow finish its layout pass first
-      const id = setTimeout(() => fitView({ padding: 0.3, duration: 200 }), 50)
-      return () => clearTimeout(id)
-    }
-  }, [nodes, fitView])
+    const id = requestAnimationFrame(() => setReady(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
 
-  // Height: deepest node y + node height estimate + padding
-  const maxY = nodes.reduce((m, n) => Math.max(m, (n.position?.y ?? 0)), 0)
-  const height = Math.max(180, maxY + 130)
+  // Fit view whenever node count changes (and container is ready)
+  useEffect(() => {
+    if (!ready || nodes.length === 0) return
+    fittedRef.current = false
+    const id1 = requestAnimationFrame(() => {
+      const id2 = requestAnimationFrame(() => {
+        fitView({ padding: 0.25, duration: 300 })
+        fittedRef.current = true
+      })
+      return () => cancelAnimationFrame(id2)
+    })
+    return () => cancelAnimationFrame(id1)
+  }, [nodes.length, ready, fitView])
+
+  // Dynamic height: deepest node y + generous padding
+  const maxY   = nodes.reduce((m, n) => Math.max(m, (n.position?.y ?? 0) + 60), 0)
+  const height = Math.max(220, maxY + 120)
+
+  // Theme-aware accent for active nodes — inject into node data
+  const themedNodes = useMemo(() => nodes.map(n => {
+    if (n.type !== 'glassNode') return n
+    return {
+      ...n,
+      data: {
+        ...n.data,
+        activeColor: theme.graphActive  ?? 'rgba(74,222,128,0.85)',
+        activeBg:    theme.graphActiveBg ?? 'rgba(74,222,128,0.18)',
+        activeGlow:  theme.graphGlow     ?? 'rgba(74,222,128,0.5)',
+        activeTxt:   theme.graphActiveTxt ?? '#4ade80',
+      },
+    }
+  }), [nodes, theme])
 
   return (
     <div
-      style={{ width: '100%', height }}
+      style={{ width: '100%', height, minHeight: 220 }}
       className={`rounded-xl overflow-hidden border border-white/10 ${theme.sidebarBg}`}
     >
       <ReactFlow
-        nodes={nodes}
+        nodes={themedNodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
         onNodesChange={onNodesChange}
         fitView
-        fitViewOptions={{ padding: 0.3 }}
+        fitViewOptions={{ padding: 0.25 }}
         nodesDraggable={true}
         nodesConnectable={false}
         elementsSelectable={false}
@@ -141,9 +173,14 @@ function GraphCanvasInner({ theme }) {
         panOnScroll={false}
         panOnDrag={true}
         proOptions={{ hideAttribution: true }}
-        style={{ background: 'transparent' }}
+        style={{ background: 'transparent', width: '100%', height: '100%' }}
       >
-        <Background color="#334155" gap={20} size={1} variant="dots" />
+        <Background
+          color={theme.graphBgDot ?? '#334155'}
+          gap={20}
+          size={1}
+          variant="dots"
+        />
       </ReactFlow>
     </div>
   )

@@ -42,7 +42,7 @@ export function resetObjectIds() {
  * Safe against circular refs via depth limit.
  */
 function pseudoToNative(value, depth = 0) {
-  if (depth > 5) return '[…]'
+  if (depth > 10) return '[…]'
   // Raw undefined → hoisted var, show as 'undefined' string for display
   if (value === undefined) return undefined
   if (value === null) return null

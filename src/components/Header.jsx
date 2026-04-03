@@ -4,8 +4,8 @@ import useThemeStore from '../store/themeStore.js'
 export default function Header() {
   const { theme, themeId, cycleTheme } = useThemeStore()
 
-  const themeEmoji = { cupertino: '☀️', fluent: '🌙', vercel: '⚫' }
-  const themeLabel = { cupertino: 'Cupertino Light', fluent: 'Fluent Dark', vercel: 'Vercel Black' }
+  const themeEmoji = { cupertino: '☀️', fluent: '🌙', vercel: '⚫', deepLogic: '✦' }
+  const themeLabel = { cupertino: 'Cupertino Light', fluent: 'Fluent Dark', vercel: 'Vercel Black', deepLogic: 'Deep Logic' }
 
   return (
     <header className={`

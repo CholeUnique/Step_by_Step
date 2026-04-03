@@ -1,8 +1,9 @@
 /**
- * Theme definitions for the 3 themes:
+ * Theme definitions for the 4 themes:
  *   - cupertino  (Apple light)
  *   - fluent     (Microsoft dark)
  *   - vercel     (Geek black)
+ *   - deepLogic  (Anthropic dark violet)
  */
 
 export const themes = {
@@ -33,6 +34,11 @@ export const themes = {
     jsonNull: 'text-gray-400',
     watchBg: 'bg-white/60 backdrop-blur-xl border border-gray-200/50',
     scrollbar: 'scrollbar-thumb-gray-300',
+    graphActive:    'rgba(59,130,246,0.9)',
+    graphActiveBg:  'rgba(59,130,246,0.15)',
+    graphGlow:      'rgba(59,130,246,0.4)',
+    graphActiveTxt: '#3b82f6',
+    graphBgDot:     '#e2e8f0',
   },
   fluent: {
     id: 'fluent',
@@ -61,6 +67,11 @@ export const themes = {
     jsonNull: 'text-gray-500',
     watchBg: 'bg-[#0d1b2a]/70 backdrop-blur-xl border border-white/10',
     scrollbar: 'scrollbar-thumb-white/20',
+    graphActive:    'rgba(96,205,255,0.9)',
+    graphActiveBg:  'rgba(0,120,212,0.20)',
+    graphGlow:      'rgba(0,120,212,0.5)',
+    graphActiveTxt: '#60cdff',
+    graphBgDot:     '#16213e',
   },
   vercel: {
     id: 'vercel',
@@ -89,5 +100,50 @@ export const themes = {
     jsonNull: 'text-gray-600',
     watchBg: 'bg-[#0a0a0a]/90 backdrop-blur-xl border border-white/10',
     scrollbar: 'scrollbar-thumb-white/10',
+    graphActive:    'rgba(0,229,160,0.9)',
+    graphActiveBg:  'rgba(0,229,160,0.12)',
+    graphGlow:      'rgba(0,229,160,0.4)',
+    graphActiveTxt: '#00e5a0',
+    graphBgDot:     '#111111',
+  },
+  deepLogic: {
+    id: 'deepLogic',
+    name: 'Deep Logic',
+    monacoTheme: 'vs-dark',
+    // #0D0B14 — near-black violet base
+    bg: 'bg-[#0D0B14]',
+    // Header: slightly lighter violet tint, frosted
+    headerBg: 'bg-[#130F20]/90 backdrop-blur-xl border-b border-[#6B46C1]/20',
+    headerText: 'text-[#E2E8F0]',
+    // Panels: #2D213F — deep violet card
+    panelBg: 'bg-[#2D213F]/80 backdrop-blur-xl border border-[#6B46C1]/25',
+    sidebarBg: 'bg-[#1A1128]/70 backdrop-blur-xl border border-[#6B46C1]/15',
+    text: 'text-[#E2E8F0]',
+    subText: 'text-[#9F7AEA]/70',
+    // #6B46C1 — primary purple accent
+    accent: 'bg-[#6B46C1]',
+    accentText: 'text-[#9F7AEA]',
+    btnBase: 'bg-[#2D213F]/60 border border-[#6B46C1]/30 text-[#E2E8F0] hover:bg-[#6B46C1]/20 hover:border-[#6B46C1]/50',
+    btnActive: 'bg-[#6B46C1] text-white border-transparent shadow-[0_0_12px_rgba(107,70,193,0.4)]',
+    btnDisabled: 'bg-[#1A1128]/40 border border-[#6B46C1]/10 text-[#9F7AEA]/30 cursor-not-allowed',
+    // #E53E3E — run button (Anthropic danger/action red)
+    runBtn: 'bg-[#E53E3E] hover:bg-[#FC4444] text-white shadow-[#E53E3E]/30 shadow-lg',
+    runBtnActive: 'bg-[#9F7AEA] hover:bg-[#B794F4] text-white shadow-[#9F7AEA]/30 shadow-lg',
+    divider: 'bg-[#6B46C1]/20',
+    tag: 'bg-[#6B46C1]/25 text-[#9F7AEA]',
+    // #4299E1 — info blue for JSON keys/strings
+    jsonKey: 'text-[#9F7AEA]',
+    jsonStr: 'text-[#4299E1]',
+    jsonNum: 'text-[#E53E3E]/90',
+    jsonBool: 'text-[#9F7AEA]',
+    jsonNull: 'text-[#E2E8F0]/30',
+    watchBg: 'bg-[#0D0B14]/80 backdrop-blur-xl border border-[#6B46C1]/15',
+    scrollbar: 'scrollbar-thumb-[#6B46C1]/30',
+    // Graph-specific tokens for GlassNode theme-aware coloring
+    graphActive:    'rgba(159,122,234,0.9)',
+    graphActiveBg:  'rgba(107,70,193,0.22)',
+    graphGlow:      'rgba(107,70,193,0.55)',
+    graphActiveTxt: '#C4B5FD',
+    graphBgDot:     '#2D213F',
   },
 }
