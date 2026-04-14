@@ -67,6 +67,11 @@ function detectStructure(name, value, prevValue) {
 
   // 3. Array with diff-based classification
   if (Array.isArray(value)) {
+    // 3a. 2-D matrix: array where every element is also an array
+    if (value.length > 0 && value.every(row => Array.isArray(row))) {
+      return { type: 'matrix', name, value }
+    }
+
     const prevArr = Array.isArray(prevValue) ? prevValue : null
     const stackOp = prevArr !== null ? detectStackOp(prevArr, value) : null
     const queueOp = prevArr !== null && !stackOp ? detectQueueOp(prevArr, value) : null
